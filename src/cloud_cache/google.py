@@ -5,7 +5,7 @@ from typing import Iterator
 
 from google.cloud import storage
 
-from src.cloudcache import CacheConfig
+from src.cloud_cache import CacheConfig
 
 
 class CloudStorageCache(collections.abc.MutableMapping):
