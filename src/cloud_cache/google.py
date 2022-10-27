@@ -2,6 +2,7 @@ import collections.abc
 import pickle
 from io import BytesIO
 from typing import Iterator
+from datetime import datetime, timedelta
 
 from google.cloud import storage
 
@@ -10,9 +11,10 @@ from . import CacheConfig
 
 class CloudStorageCache(collections.abc.MutableMapping):
 
-    def __init__(self, bucket: storage.Bucket, config: CacheConfig = None):
+    def __init__(self, bucket: storage.Bucket, ttl: int, config: CacheConfig = None):
         self._bucket = bucket
         self._config = config
+        self._ttl = ttl
         self._cache = dict()
 
     def __getitem__(self, key):
@@ -23,12 +25,16 @@ class CloudStorageCache(collections.abc.MutableMapping):
 
         # Check cloud storage bucket
         # TODO: Handle concurrency. Use lock?
-        blob = self._bucket.blob(str(key))
-        if blob.exists():
+        blob = self._bucket.get_blob(str(key))
+        if blob is None:
+            raise KeyError
+
+        if datetime.fromisoformat(blob.metadata.get('expires_at')) <= datetime.now():
             data = pickle.loads(blob.download_as_bytes())
             self._cache[key] = data
             return data
 
+        # blob.delete()
         raise KeyError
 
     def __setitem__(self, key, value):
@@ -38,6 +44,7 @@ class CloudStorageCache(collections.abc.MutableMapping):
 
         pickled_data = pickle.dumps(value)
         blob = self._bucket.blob(str(key))
+        blob.metadata = {'expires_at': datetime.now().replace(microsecond=0) + timedelta(seconds=self._ttl)}
         if not blob.exists():
             blob.upload_from_file(BytesIO(pickled_data), size=len(pickled_data))
 
